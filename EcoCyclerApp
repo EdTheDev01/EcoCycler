@@ -1,0 +1,17 @@
+//
+//  EcoCyclerApp.swift
+//  EcoCycler
+//
+//  Created by Edward L on 9/16/23.
+//
+
+import SwiftUI
+
+@main
+struct EcoCyclerApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
