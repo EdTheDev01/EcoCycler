@@ -1,0 +1,190 @@
+//
+//  ContentView.swift
+//  EcoCycler
+//
+//  Created by Edward L on 9/16/23.
+//
+import SwiftUI
+import WebKit
+import Combine
+
+struct ContentView: View {
+    @State private var showRecycleCenter = false
+    @State private var imageUrl: String = ""
+    @ObservedObject private var viewModel = GarbageDetectionViewModel()
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image("Recycle001")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 150, height: 150)
+            
+            Text("Welcome, Edward")
+                .font(.largeTitle)
+                .padding()
+
+            if showRecycleCenter {
+                WebView(url: URL(string: "https://elmah.io/tools/base64-image-encoder/")!, onDismiss: {
+                    self.showRecycleCenter = false
+                })
+
+                TextField("Enter Image URL", text: $imageUrl)
+                    .padding()
+                    .border(Color.gray, width: 1)
+                    .padding()
+                    
+                Button("Detect Item") {
+                    viewModel.fetchGarbageDetectionResults(for: imageUrl)
+                }
+                .padding()
+            } else {
+                Button("Recycle Center") {
+                    showRecycleCenter.toggle()
+                }
+                .padding()
+                .background(Color.green)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+        }
+        .padding()
+    }
+}
+
+struct WebView: UIViewRepresentable {
+    let url: URL
+    var onDismiss: (() -> Void)?
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        let request = URLRequest(url: url)
+        uiView.load(request)
+    }
+
+    // Add this to handle the dismiss action
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        var parent: WebView
+        
+        init(_ parent: WebView) {
+            self.parent = parent
+        }
+        
+        // You can implement WKNavigationDelegate methods here if needed.
+    }
+}
+
+struct Recycle001: View {
+    @State private var image: Image?
+    @State private var showingImagePicker = false
+    @State private var inputImage: UIImage?
+    @ObservedObject private var viewModel = GarbageDetectionViewModel()
+
+    var body: some View {
+        VStack {
+            image?
+                .resizable()
+                .scaledToFit()
+            Button("Select Image") {
+                self.showingImagePicker = true
+            }
+            Button("Upload Image") {
+                guard let inputImage = self.inputImage else { return }
+                if let imageURL = saveImageToDisk(image: inputImage) {
+                    viewModel.fetchGarbageDetectionResults(for: imageURL)
+                }
+            }
+            RecyclingCenterView(result: $viewModel.result, error: $viewModel.error)
+        }
+        .sheet(isPresented: $showingImagePicker, onDismiss: loadImage) {
+            // TODO: Define the ImagePicker view
+            // ImagePicker(image: self.$inputImage)
+        }
+    }
+
+    func loadImage() {
+        guard let inputImage = inputImage else { return }
+        image = Image(uiImage: inputImage)
+    }
+
+    func saveImageToDisk(image: UIImage) -> String? {
+        // TODO: Implement your logic here
+        return nil
+    }
+}
+
+class GarbageDetectionViewModel: ObservableObject {
+    @Published var result: String?
+    @Published var error: Error?
+
+    func fetchGarbageDetectionResults(for imageUrl: String) {
+        guard let url = URL(string: "https://reciclapi-garbage-detection.p.rapidapi.com/detect") else {
+            self.error = NSError(domain: "", code: 404, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("YOUR_API_KEY", forHTTPHeaderField: "X-RapidAPI-Key")  // Make sure to replace "YOUR_API_KEY" with your actual API key, and consider storing it securely.
+        request.addValue("reciclapi-garbage-detection.p.rapidapi.com", forHTTPHeaderField: "X-RapidAPI-Host")
+
+        let payload = ["image": imageUrl]
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+        } catch {
+            self.error = error
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            guard let data = data, error == nil else {
+                DispatchQueue.main.async {
+                    self.error = error
+                }
+                return
+            }
+            
+            if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any], let resultString = jsonResponse["result"] as? String {
+                DispatchQueue.main.async {
+                    self.result = resultString
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.result = nil
+                    self.error = NSError(domain: "", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to decode response"])
+                }
+            }
+        }
+        task.resume()
+    }
+}
+
+struct RecyclingCenterView: View {
+    @Binding var result: String?
+    @Binding var error: Error?
+
+    var body: some View {
+        VStack {
+            if let result = result {
+                Text(result)
+            } else if let error = error {
+                Text(error.localizedDescription).foregroundColor(.red)
+            }
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
